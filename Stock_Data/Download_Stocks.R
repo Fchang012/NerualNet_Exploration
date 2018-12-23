@@ -5,15 +5,15 @@ require(quantmod)
 
 
 # Setting WD --------------------------------------------------------------
-# this.dir <- dirname(parent.frame(2)$ofile)
-# setwd(this.dir)
+this.dir <- dirname(parent.frame(2)$ofile)
+setwd(this.dir)
 
 
 # Get Stock Info And Write ------------------------------------------------
-wantedStocks <- c("VTI")
+wantedStocks <- c("VTI", "T")
 
 for (i in 1:length(wantedStocks)){
-  getSymbols(wantedStocks[i], from=as.Date("18-01-01", format="%y-%m-%d"))
+  getSymbols(wantedStocks[i], from=as.Date("08-01-01", format="%y-%m-%d"))
   saveRDS(
     get(wantedStocks[i]),
     file = paste(wantedStocks[i], ".rds", sep="")

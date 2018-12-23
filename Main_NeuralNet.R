@@ -6,8 +6,8 @@ require(quantmod)
 
 
 # Setting WD --------------------------------------------------------------
-# this.dir <- dirname(parent.frame(2)$ofile)
-# setwd(this.dir)
+this.dir <- dirname(parent.frame(2)$ofile)
+setwd(this.dir)
 
 
 # Import Stock Data -------------------------------------------------------
