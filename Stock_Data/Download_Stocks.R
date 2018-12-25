@@ -10,7 +10,7 @@ setwd(this.dir)
 
 
 # Get Stock Info And Write ------------------------------------------------
-wantedStocks <- c("VTI", "T")
+wantedStocks <- c("VTI")
 
 for (i in 1:length(wantedStocks)){
   getSymbols(wantedStocks[i], from=as.Date("08-01-01", format="%y-%m-%d"))
