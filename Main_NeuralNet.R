@@ -6,6 +6,14 @@ require(quantmod)
 require(data.table)
 require(neuralnet)
 require(nnet)
+require(foreach)
+require(parallel)
+require(doParallel)
+
+
+# Set Seed ----------------------------------------------------------------
+set.seed(123)
+
 
 # Setting WD --------------------------------------------------------------
 # this.dir <- dirname(parent.frame(2)$ofile)
@@ -27,15 +35,14 @@ addTechnicalIndicators <- function(stockInfo){
   stockInfo$daily.returns <- dailyReturn(stockInfo[,4])
   
   # Classify daily return -
-  # 0 = x < -0.02
-  # 1 = -0.02 <= x <= 0.02
-  # 2 = x > 0.02
-  stockInfo$daily.returns.classified <- 1.0
-  stockInfo$daily.returns.classified[stockInfo$daily.returns < -0.02, ] <- 0.0
-  stockInfo$daily.returns.classified[stockInfo$daily.returns > 0.02, ] <- 2.0
+  # 0 = x < 0.0
+  # 1 = x = 0
+  # 2 = x > 0.0
+  stockInfo$daily.returns.classified <- 0.0
+  stockInfo$daily.returns.classified[stockInfo$daily.returns >= 0.0, ] <- 1.0
   
-  # Remove Adjusted
-  stockInfo <- stockInfo[,-6]
+  # Remove Adjusted, High, Low
+  stockInfo <- stockInfo[,-c(2,3,6)]
   return(stockInfo)
 }
 
@@ -45,8 +52,8 @@ VTI <- addTechnicalIndicators(VTI)
 VTI <- VTI[34:length(VTI$VTI.Close),]
 
 # Split Technical Indicators and DailyReturns
-TechnicalIndicators <- as.data.frame(VTI[,1:12])
-TheDailyReturns <- as.data.frame(VTI[,13:14])
+TechnicalIndicators <- as.data.frame(VTI[,1:10])
+TheDailyReturns <- as.data.frame(VTI[,11:12])
 
 # Shifting Daily Returns
 TheDailyReturns$daily.returns.classified.shifted <- shift(TheDailyReturns$daily.returns.classified, type = 'lead')
@@ -57,7 +64,7 @@ TheDailyReturns <- cbind(TheDailyReturns,
              )
 
 # Set labels name
-names(TheDailyReturns) <- c(names(TheDailyReturns)[1:3],"Loss_0.02","Mid","Gain_0.02")
+names(TheDailyReturns) <- c(names(TheDailyReturns)[1:3],"Loss","Gain")
 
 # Max-Min Normalization ---------------------------------------------------
 normalize <- function(x) {
@@ -67,9 +74,8 @@ normalize <- function(x) {
 maxminDF <- as.data.frame(lapply(TechnicalIndicators, normalize))
 
 # Re-combine
-maxminDF$'Loss_0.02' <- TheDailyReturns$`Loss_0.02`
-maxminDF$'Mid' <- TheDailyReturns$Mid
-maxminDF$'Gain_0.02' <- TheDailyReturns$`Gain_0.02`
+maxminDF$'Loss' <- TheDailyReturns$`Loss`
+maxminDF$'Gain' <- TheDailyReturns$`Gain`
 
 # Training and Test Data ------------------------------------------------
 # Test Train split on 80%
@@ -87,17 +93,36 @@ testset <- TrainTestDataSplit(maxminDF)[[2]]
 
 
 # Neural Network ----------------------------------------------------------
-theFormula <- paste(paste(colnames(trainset)[13:15], collapse = " + "), " ~ ", paste(colnames(trainset)[1:12], collapse = " + "))
-nn <- neuralnet(theFormula, data = trainset, hidden = c(3,1), linear.output = FALSE, lifesign = 'minimal', threshold = 0.01)
+# softplus function
+softplus <- function(x) {log(1+exp(x))}
+
+theFormula <- paste(paste(colnames(trainset)[11:12], collapse = " + "), " ~ ", paste(colnames(trainset)[1:10], collapse = " + "))
+nn <- neuralnet(theFormula, data = trainset, hidden = c(3,2), linear.output = FALSE, lifesign = 'full', rep = 2, threshold = 0.01, learningrate = 0.0001, act.fct = softplus, err.fct = 'sse', stepmax = 250000)
 plot(nn)
 
-# Compute predictions
-pr.nn <- compute(nn, trainset[,1:12])
+# Compute predictions and accuracy function
+Prediction_And_Accuracy <- function(nn, dataset){
+  # Compute predictions
+  pr.nn <- compute(nn, dataset[,1:10])
+  
+  # Extract results
+  pr.nn.results <- pr.nn$net.result
+  
+  # Accuracy (training set)
+  original_values <- max.col(dataset[, 11:12])
+  pr.nn.results_2 <- max.col(pr.nn.results)
+  accuracy <- mean(pr.nn.results_2 == original_values)
+  ConfusionMatrix <- table(original_values, pr.nn.results_2)
+  
+  return(list(pr.nn.results,
+              original_values,
+              pr.nn.results_2,
+              accuracy,
+              ConfusionMatrix))
+}
 
-# Extract results
-pr.nn.results <- pr.nn$net.result
+trainset.results <- Prediction_And_Accuracy(nn, trainset)
+testset.results <- Prediction_And_Accuracy(nn, testset)
 
-# Accuracy (training set)
-original_values <- max.col(trainset[, 13:15])
-pr.nn.results_2 <- max.col(pr.nn.results)
-mean(pr.nn.results_2 == original_values)
+trainset.results[[4]]
+testset.results[[4]]
